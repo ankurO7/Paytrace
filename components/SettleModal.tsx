@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Debt } from '@/lib/types';
 import { generateSolanaPayURL, sendSettlement, getSolanaExplorerURL } from '@/lib/solana';
@@ -20,9 +19,19 @@ export default function SettleModal({ debt, onClose, onSettled }: Props) {
   const [txSig, setTxSig] = useState('');
   const [error, setError] = useState('');
 
+  // Reset state every time a new debt is opened
+  useEffect(() => {
+    if (debt) {
+      setStep('qr');
+      setTxSig('');
+      setError('');
+    }
+  }, [debt]);
+
   if (!debt) return null;
 
   const payURL = generateSolanaPayURL(debt.toWallet, debt.amtSol, debt.from, debt.to);
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(payURL)}`;
 
   const handleSendOnChain = async () => {
     if (!wallet.connected) {
@@ -43,20 +52,19 @@ export default function SettleModal({ debt, onClose, onSettled }: Props) {
     }
   };
 
+  const btn: React.CSSProperties = {
+    fontFamily: 'inherit', fontSize: 13, padding: '9px 16px',
+    borderRadius: 9, border: '0.5px solid rgba(255,255,255,0.14)',
+    background: 'transparent', color: 'var(--text)', cursor: 'pointer',
+  };
+  const btnPrimary: React.CSSProperties = { ...btn, background: 'var(--accent)', border: 'none', color: '#fff', fontWeight: 600 };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{
-        background: 'var(--surface)',
-        border: '0.5px solid var(--border2)',
-        borderRadius: 18,
-        padding: 28,
-        width: 420,
-        maxWidth: 'calc(100vw - 32px)',
-      }}>
+      <div style={{ background: 'var(--surface)', border: '0.5px solid rgba(255,255,255,0.14)', borderRadius: 18, padding: 28, width: 420, maxWidth: 'calc(100vw - 32px)' }}>
 
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
@@ -66,85 +74,33 @@ export default function SettleModal({ debt, onClose, onSettled }: Props) {
           </div>
         </div>
 
-        {/* QR step */}
+        {/* QR / Error step */}
         {(step === 'qr' || step === 'error') && (
           <>
-            <div style={{
-              background: '#fff',
-              borderRadius: 12,
-              padding: 16,
-              display: 'flex',
-              justifyContent: 'center',
-              marginBottom: 16,
-            }}>
-              <QRCodeSVG value={payURL} size={200} />
+            <div style={{ background: '#fff', borderRadius: 12, padding: 16, display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <img src={qrSrc} alt="Solana Pay QR Code" width={200} height={200} style={{ display: 'block' }} />
             </div>
 
-            <div style={{
-              background: 'var(--bg)',
-              border: '0.5px solid rgba(34,211,165,0.3)',
-              borderRadius: 10,
-              padding: '10px 14px',
-              marginBottom: 16,
-            }}>
-              <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'monospace', marginBottom: 4 }}>
-                ◎ Solana Pay QR
-              </div>
-              <div style={{
-                fontSize: 11,
-                color: 'var(--muted)',
-                fontFamily: 'monospace',
-                wordBreak: 'break-all',
-                lineHeight: 1.5,
-              }}>
-                {payURL.slice(0, 80)}...
+            <div style={{ background: 'var(--bg)', border: '0.5px solid rgba(34,211,165,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'monospace', marginBottom: 4 }}>◎ Solana Pay QR</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>
+                {payURL.slice(0, 90)}...
               </div>
             </div>
 
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 20, lineHeight: 1.6 }}>
-              Scan with any Solana wallet app to pay on devnet — or click below to send directly from your connected wallet.
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16, lineHeight: 1.6 }}>
+              Scan with any Solana wallet app — or click <strong style={{ color: 'var(--text)' }}>Send from Wallet</strong> to pay directly from Phantom.
             </div>
 
             {step === 'error' && (
-              <div style={{
-                background: 'rgba(248,113,113,0.1)',
-                border: '0.5px solid rgba(248,113,113,0.3)',
-                borderRadius: 8,
-                padding: '10px 14px',
-                fontSize: 12,
-                color: 'var(--red)',
-                marginBottom: 16,
-              }}>
-                {error}
+              <div style={{ background: 'rgba(248,113,113,0.1)', border: '0.5px solid rgba(248,113,113,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--red)', marginBottom: 16 }}>
+                ⚠️ {error}
               </div>
             )}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={onClose} style={{
-                fontFamily: 'inherit',
-                fontSize: 13,
-                padding: '9px 16px',
-                borderRadius: 9,
-                border: '0.5px solid var(--border2)',
-                background: 'transparent',
-                color: 'var(--text)',
-                cursor: 'pointer',
-              }}>
-                Cancel
-              </button>
-              <button onClick={handleSendOnChain} style={{
-                fontFamily: 'inherit',
-                fontSize: 13,
-                fontWeight: 600,
-                padding: '9px 16px',
-                borderRadius: 9,
-                border: 'none',
-                background: 'var(--accent)',
-                color: '#fff',
-                cursor: 'pointer',
-              }}>
-                Send from Wallet ↗
-              </button>
+              <button onClick={onClose} style={btn}>Cancel</button>
+              <button onClick={handleSendOnChain} style={btnPrimary}>Send from Wallet ↗</button>
             </div>
           </>
         )}
@@ -152,67 +108,25 @@ export default function SettleModal({ debt, onClose, onSettled }: Props) {
         {/* Sending */}
         {step === 'sending' && (
           <div style={{ textAlign: 'center', padding: '32px 0' }}>
-            <div style={{ fontSize: 32, marginBottom: 16 }}>⏳</div>
+            <div style={{ fontSize: 36, marginBottom: 16 }}>⏳</div>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Broadcasting transaction...</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>Confirm in Phantom wallet popup</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>Confirm in your Phantom wallet popup</div>
           </div>
         )}
 
         {/* Done */}
         {step === 'done' && (
           <div style={{ textAlign: 'center', padding: '16px 0' }}>
-            <div style={{ fontSize: 40, marginBottom: 16 }}>✅</div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--green)' }}>
-              Settled on-chain!
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
-              Transaction confirmed on Solana devnet
-            </div>
-            <div style={{
-              background: 'var(--bg)',
-              border: '0.5px solid var(--border2)',
-              borderRadius: 8,
-              padding: '10px 14px',
-              fontFamily: 'monospace',
-              fontSize: 11,
-              color: 'var(--muted)',
-              wordBreak: 'break-all',
-              marginBottom: 20,
-              textAlign: 'left',
-            }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)', marginBottom: 6 }}>Settled on-chain!</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>Transaction confirmed on Solana devnet</div>
+            <div style={{ background: 'var(--bg)', border: '0.5px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all', marginBottom: 20, textAlign: 'left' }}>
               {txSig}
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <button onClick={onClose} style={{
-                fontFamily: 'inherit',
-                fontSize: 13,
-                padding: '9px 16px',
-                borderRadius: 9,
-                border: '0.5px solid var(--border2)',
-                background: 'transparent',
-                color: 'var(--text)',
-                cursor: 'pointer',
-              }}>
-                Close
-              </button>
-              <a
-                href={getSolanaExplorerURL(txSig)}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  fontFamily: 'inherit',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  padding: '9px 16px',
-                  borderRadius: 9,
-                  border: 'none',
-                  background: 'var(--green)',
-                  color: '#051a12',
-                  cursor: 'pointer',
-                  textDecoration: 'none',
-                  display: 'inline-block',
-                }}
-              >
+              <button onClick={onClose} style={btn}>Close</button>
+              <a href={getSolanaExplorerURL(txSig)} target="_blank" rel="noreferrer"
+                style={{ ...btnPrimary, background: 'var(--green)', color: '#051a12', textDecoration: 'none', display: 'inline-block' }}>
                 View on Explorer ↗
               </a>
             </div>

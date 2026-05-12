@@ -1,5 +1,13 @@
-import { PublicKey, Connection, clusterApiUrl } from '@solana/web3.js';
-import { encodeURL, createTransfer } from '@solana/pay';
+import {
+  PublicKey,
+  Connection,
+  clusterApiUrl,
+  Transaction,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+  TransactionInstruction,
+} from '@solana/web3.js';
+import { encodeURL } from '@solana/pay';
 import BigNumber from 'bignumber.js';
 
 export const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
@@ -17,24 +25,25 @@ export function generateSolanaPayURL(
   try {
     const recipient = new PublicKey(recipientAddress);
     const amount = new BigNumber(amountSol.toFixed(9));
-    const label = 'PayTrace';
-    const message = `${fromName} → ${toName} settlement`;
-    const memo = `paytrace:${fromName}:${toName}`;
-
-    const url = encodeURL({ recipient, amount, label, message, memo });
+    const url = encodeURL({
+      recipient,
+      amount,
+      label: 'PayTrace',
+      message: `${fromName} → ${toName} settlement`,
+      memo: `paytrace:${fromName}:${toName}`,
+    });
     return url.toString();
   } catch {
-    // If wallet address is invalid (demo mode), return a demo URL
     return `solana:DEMO_WALLET?amount=${amountSol.toFixed(4)}&label=PayTrace&memo=demo`;
   }
 }
 
 /**
  * Sends a real SOL transfer on devnet using the connected wallet.
- * Returns the transaction signature.
+ * Built with raw web3.js — no @solana/pay createTransfer to avoid version conflicts.
  */
 export async function sendSettlement(
-  wallet: any, // wallet adapter
+  wallet: any,
   recipientAddress: string,
   amountSol: number,
   fromName: string,
@@ -46,25 +55,41 @@ export async function sendSettlement(
   try {
     recipient = new PublicKey(recipientAddress);
   } catch {
-    throw new Error('Invalid recipient wallet address');
+    throw new Error('Invalid recipient wallet address. Add a real devnet address for this member.');
   }
 
-  const amount = new BigNumber(amountSol.toFixed(9));
-  const memo = `PayTrace: ${fromName} → ${toName}`;
+  const lamports = Math.round(amountSol * LAMPORTS_PER_SOL);
 
-  const transaction = await createTransfer(connection, wallet.publicKey, {
-    recipient,
-    amount,
-    memo,
-  });
+  const transaction = new Transaction();
 
-  const { blockhash } = await connection.getLatestBlockhash();
+  // SOL transfer
+  transaction.add(
+    SystemProgram.transfer({
+      fromPubkey: wallet.publicKey,
+      toPubkey: recipient,
+      lamports,
+    })
+  );
+
+  // Memo instruction — writes PayTrace metadata on-chain
+  const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+  const memo = `PayTrace: ${fromName} → ${toName} | ${amountSol.toFixed(4)} SOL`;
+  transaction.add(
+    new TransactionInstruction({
+      keys: [{ pubkey: wallet.publicKey, isSigner: true, isWritable: false }],
+      programId: MEMO_PROGRAM_ID,
+      data: Buffer.from(memo, 'utf8'),
+    })
+  );
+
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
   transaction.recentBlockhash = blockhash;
   transaction.feePayer = wallet.publicKey;
 
   const signed = await wallet.signTransaction(transaction);
   const signature = await connection.sendRawTransaction(signed.serialize());
-  await connection.confirmTransaction(signature, 'confirmed');
+
+  await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
 
   return signature;
 }
